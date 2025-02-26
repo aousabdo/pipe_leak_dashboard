@@ -1,0 +1,30 @@
+# Fixes for Handling Empty Leak Events DataFrames
+
+After resolving the probability distribution issue, we encountered another error when no leak events were generated in the simulation. The error occurred because we were trying to access the `geometry` column of an empty DataFrame.
+
+## Changes Made:
+
+1. **Updated `load_or_generate_data` function**:
+   - Added check for empty `leak_events` DataFrame before trying to drop columns
+   - Created a proper empty DataFrame with expected columns when no leaks were generated
+   - Added conditional handling for feature generation when no leaks are present
+   - Modified the code that converts DataFrames to GeoDataFrames to handle empty cases
+
+2. **Updated chart functions to handle empty DataFrames**:
+   - `plot_leak_severity_distribution`: Returns an empty chart with informational message
+   - `plot_leaks_over_time`: Returns an empty timeline with informational message
+   - `plot_leak_causes`: Returns empty bar charts with informational messages
+
+3. **Updated map creation to handle empty leak events**:
+   - Modified `create_leak_map` to show just the pipe network with an informational message
+   
+4. **Updated filtering logic in main function**:
+   - Added different UI paths for when leak events are empty vs. when they exist
+   - Disabled date and severity filters when no leak events are available
+   - Kept material filters using pipe_network data for the risk map
+
+These changes make the application resilient to scenarios where the simulation doesn't generate any leak events. Instead of crashing, the app now displays informative messages and empty visualizations that explain the lack of data.
+
+## Why This Works:
+
+This approach gracefully handles edge cases where no leaks are generated, which could happen with certain simulation parameters or by chance due to the probabilistic nature of the leak generation algorithm. The application can now run successfully in all cases and provides appropriate feedback to the user when no data is available for certain visualizations. 

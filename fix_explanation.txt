@@ -1,0 +1,17 @@
+## Fix for ValueError: probabilities do not sum to 1
+
+The error occurred in the PipeLeakSimulator class when using numpy's random.choice() function. This function requires that the provided probabilities sum to exactly 1, but several probability distributions in the code did not meet this requirement:
+
+1. pipe_diameters probabilities:
+   - Original values: [0.25, 0.15, 0.10, 0.05] - sum: 0.55
+   - Fixed values: [0.45, 0.30, 0.15, 0.10] - sum: 1.00
+
+2. soil_types probabilities:
+   - Original values: [0.20, 0.15, 0.10, 0.25, 0.18] - sum: 0.88
+   - Fixed values: [0.23, 0.17, 0.12, 0.28, 0.20] - sum: 1.00
+
+3. pipe_materials probabilities were already correct (sum: 1.00)
+
+The error specifically mentioned in the traceback was happening in the _generate_pipe_network method when selecting a random pipe diameter with probabilities that didn't sum to 1.
+
+After these fixes, numpy.random.choice() can work correctly with the probability distributions, allowing the simulation to run without errors. 
