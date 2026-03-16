@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipe-leak-dashboard"
+version = "2.0.0"
+description = "Water utility pipe leak simulation, prediction, and analysis dashboard"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "wntr>=1.2",
+    "plotly>=5.18",
+    "streamlit>=1.32",
+    "pydeck>=0.9",
+    "joblib>=1.3",
+    "xgboost>=2.0",
+    "scikit-learn>=1.4",
+    "lifelines>=0.28",
+    "pandera>=0.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
