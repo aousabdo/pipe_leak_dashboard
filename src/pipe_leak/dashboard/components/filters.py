@@ -1,23 +1,20 @@
-"""Sidebar filter widgets."""
+"""Sidebar filter widgets — clean, grouped sections."""
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 
 
 def render_sidebar_filters(
     events_df: pd.DataFrame, pipes_df: pd.DataFrame
 ) -> dict:
-    """
-    Render sidebar filters and return filter selections.
-
-    Returns:
-        Dict with filter keys: date_range, severities, materials, age_range.
-    """
-    st.sidebar.header("Filters")
+    """Render sidebar filters and return filter selections."""
     filters = {}
 
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Data Filters")
+
     if events_df is not None and not events_df.empty:
+        events_df = events_df.copy()
         events_df["date"] = pd.to_datetime(events_df["date"])
 
         # Date range
@@ -32,32 +29,38 @@ def render_sidebar_filters(
         filters["date_range"] = date_range if len(date_range) == 2 else (min_date, max_date)
 
         # Severity
-        severities = sorted(events_df["severity"].unique().tolist())
+        severities = ["Minor", "Moderate", "Major", "Critical"]
+        available = [s for s in severities if s in events_df["severity"].unique()]
         filters["severities"] = st.sidebar.multiselect(
-            "Severity", options=severities, default=severities
+            "Severity Level",
+            options=available,
+            default=available,
         )
 
         # Material
         materials = sorted(events_df["material"].unique().tolist())
         filters["materials"] = st.sidebar.multiselect(
-            "Pipe Material", options=materials, default=materials
+            "Pipe Material",
+            options=materials,
+            default=materials,
         )
     else:
-        st.sidebar.info("No leak events available for filtering.")
+        st.sidebar.caption("No leak events available for filtering.")
         filters["date_range"] = None
         filters["severities"] = []
         filters["materials"] = []
 
-    # Age range (from pipe data)
+    # Age range
     if pipes_df is not None and "age" in pipes_df.columns:
         age_min = int(pipes_df["age"].min())
         age_max = int(pipes_df["age"].max())
-        filters["age_range"] = st.sidebar.slider(
-            "Pipe Age Range",
-            min_value=age_min,
-            max_value=age_max,
-            value=(age_min, age_max),
-        )
+        if age_min < age_max:
+            filters["age_range"] = st.sidebar.slider(
+                "Pipe Age (years)",
+                min_value=age_min,
+                max_value=age_max,
+                value=(age_min, age_max),
+            )
 
     return filters
 

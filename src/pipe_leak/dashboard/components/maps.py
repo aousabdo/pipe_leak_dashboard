@@ -1,14 +1,27 @@
-"""PyDeck map rendering helpers."""
+"""PyDeck map rendering helpers — polished with dark basemap and vivid layers."""
 
 import pandas as pd
 import numpy as np
 import pydeck as pdk
 
 SEVERITY_COLOR_MAP = {
-    "Minor": [56, 161, 105, 180],
-    "Moderate": [221, 107, 32, 200],
-    "Major": [229, 62, 62, 220],
-    "Critical": [155, 44, 44, 255],
+    "Minor": [34, 197, 94, 200],
+    "Moderate": [245, 158, 11, 220],
+    "Major": [239, 68, 68, 240],
+    "Critical": [153, 27, 27, 255],
+}
+
+_MAP_STYLE = "mapbox://styles/mapbox/dark-v11"
+
+_TOOLTIP_STYLE = {
+    "backgroundColor": "rgba(15, 23, 42, 0.92)",
+    "color": "#f8fafc",
+    "fontSize": "13px",
+    "borderRadius": "8px",
+    "padding": "10px 14px",
+    "boxShadow": "0 4px 12px rgba(0,0,0,0.3)",
+    "fontFamily": "Inter, -apple-system, sans-serif",
+    "lineHeight": "1.5",
 }
 
 
@@ -19,42 +32,49 @@ def pipe_network_map(
     center_lon: float | None = None,
 ) -> pdk.Deck:
     """
-    Create a pydeck map showing the pipe network as line segments.
-
-    Pipes are colored by risk score (red=high, green=low) if provided,
-    otherwise by material type.
+    Pipe network as glowing line segments on dark basemap.
+    Color: green (safe) -> yellow (moderate) -> red (high risk).
     """
     if center_lat is None:
         center_lat = pipes_df["mid_lat"].mean()
     if center_lon is None:
         center_lon = pipes_df["mid_lon"].mean()
 
-    # Build line data from pipe geometries
     lines = []
-    for _, pipe in pipes_df.iterrows():
+    for i, (_, pipe) in enumerate(pipes_df.iterrows()):
         geom = pipe.get("geometry")
-        if geom is not None and hasattr(geom, "coords") and len(list(geom.coords)) >= 2:
-            coords = list(geom.coords)
-            start = list(coords[0])
-            end = list(coords[-1])
-        else:
+        if geom is None or not hasattr(geom, "coords"):
+            continue
+        coords = list(geom.coords)
+        if len(coords) < 2:
             continue
 
-        risk = 0.5
-        if risk_scores is not None:
-            idx = pipes_df.index.get_loc(pipe.name)
-            if idx < len(risk_scores):
-                risk = float(risk_scores[idx])
+        risk = 0.3
+        if risk_scores is not None and i < len(risk_scores):
+            risk = float(risk_scores[i])
 
-        # Color: green (low risk) -> red (high risk)
-        r = int(min(255, risk * 510))
-        g = int(min(255, (1 - risk) * 510))
-        color = [r, g, 50, 180]
+        # Smooth green -> yellow -> red gradient
+        if risk < 0.3:
+            r, g, b = 34, 197, 94
+        elif risk < 0.6:
+            t = (risk - 0.3) / 0.3
+            r = int(34 + (245 - 34) * t)
+            g = int(197 + (158 - 197) * t)
+            b = int(94 + (11 - 94) * t)
+        else:
+            t = (risk - 0.6) / 0.4
+            r = int(245 + (239 - 245) * t)
+            g = int(158 + (68 - 158) * t)
+            b = int(11 + (68 - 11) * t)
+
+        alpha = int(140 + risk * 115)
+        width = 2 + risk * 4
 
         lines.append({
-            "start": start,
-            "end": end,
-            "color": color,
+            "start": list(coords[0]),
+            "end": list(coords[-1]),
+            "color": [r, g, b, alpha],
+            "width": width,
             "pipe_id": pipe.get("pipe_id", ""),
             "material": pipe.get("material", ""),
             "age": int(pipe.get("age", 0)),
@@ -67,33 +87,33 @@ def pipe_network_map(
         get_source_position="start",
         get_target_position="end",
         get_color="color",
-        get_width=3,
+        get_width="width",
+        width_min_pixels=1,
         pickable=True,
         auto_highlight=True,
+        highlight_color=[255, 255, 255, 80],
     )
 
     tooltip = {
         "html": (
-            "<b>Pipe:</b> {pipe_id}<br>"
+            "<div style='margin-bottom:4px'><b style='font-size:14px'>{pipe_id}</b></div>"
             "<b>Material:</b> {material}<br>"
             "<b>Age:</b> {age} years<br>"
-            "<b>Risk:</b> {risk}%"
+            "<b>Risk Score:</b> <span style='color:#ef4444;font-weight:700'>{risk}%</span>"
         ),
-        "style": {"backgroundColor": "#1a365d", "color": "white", "fontSize": "12px"},
+        "style": _TOOLTIP_STYLE,
     }
 
     view = pdk.ViewState(
-        latitude=center_lat,
-        longitude=center_lon,
-        zoom=13,
-        pitch=0,
+        latitude=center_lat, longitude=center_lon,
+        zoom=13.5, pitch=15, bearing=0,
     )
 
     return pdk.Deck(
         layers=[line_layer],
         initial_view_state=view,
         tooltip=tooltip,
-        map_style="light",
+        map_style=_MAP_STYLE,
     )
 
 
@@ -102,7 +122,7 @@ def leak_events_map(
     center_lat: float | None = None,
     center_lon: float | None = None,
 ) -> pdk.Deck:
-    """Create a pydeck map showing leak event locations colored by severity."""
+    """Leak events as pulsing scatter points with heatmap underlay."""
     if events_df is None or events_df.empty:
         return _empty_map(center_lat or 38.58, center_lon or -121.49)
 
@@ -111,13 +131,27 @@ def leak_events_map(
     if center_lon is None:
         center_lon = events_df["longitude"].mean()
 
-    # Add color column
     df = events_df.copy()
     df["color"] = df["severity"].map(SEVERITY_COLOR_MAP)
     df["color"] = df["color"].apply(lambda x: x if isinstance(x, list) else [100, 100, 100, 180])
     df["radius"] = df["severity"].map(
-        {"Minor": 40, "Moderate": 60, "Major": 90, "Critical": 130}
-    ).fillna(50)
+        {"Minor": 35, "Moderate": 55, "Major": 80, "Critical": 120}
+    ).fillna(45)
+
+    # Ensure date is string for tooltip
+    df["date_str"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    df["cost_str"] = df["repair_cost"].apply(lambda x: f"${x:,.0f}")
+    df["loss_str"] = df["water_loss_gallons"].apply(lambda x: f"{x:,.0f}")
+
+    heat_layer = pdk.Layer(
+        "HeatmapLayer",
+        data=df,
+        get_position=["longitude", "latitude"],
+        get_weight="flow_rate_gpm",
+        radiusPixels=50,
+        opacity=0.4,
+        threshold=0.05,
+    )
 
     scatter_layer = pdk.Layer(
         "ScatterplotLayer",
@@ -127,36 +161,29 @@ def leak_events_map(
         get_fill_color="color",
         pickable=True,
         auto_highlight=True,
-    )
-
-    # Heatmap layer
-    heat_layer = pdk.Layer(
-        "HeatmapLayer",
-        data=df,
-        get_position=["longitude", "latitude"],
-        get_weight="flow_rate_gpm",
-        radiusPixels=40,
-        opacity=0.5,
+        highlight_color=[255, 255, 255, 80],
+        opacity=0.85,
     )
 
     tooltip = {
         "html": (
-            "<b>Pipe:</b> {pipe_id}<br>"
-            "<b>Date:</b> {date}<br>"
+            "<div style='margin-bottom:4px'><b style='font-size:14px'>{pipe_id}</b> "
+            "<span style='opacity:0.7'>| {date_str}</span></div>"
             "<b>Severity:</b> {severity}<br>"
-            "<b>Flow:</b> {flow_rate_gpm} GPM<br>"
-            "<b>Cost:</b> ${repair_cost}"
+            "<b>Flow Rate:</b> {flow_rate_gpm} GPM<br>"
+            "<b>Water Loss:</b> {loss_str} gal<br>"
+            "<b>Repair Cost:</b> {cost_str}"
         ),
-        "style": {"backgroundColor": "#1a365d", "color": "white", "fontSize": "12px"},
+        "style": _TOOLTIP_STYLE,
     }
 
-    view = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=13, pitch=0)
+    view = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=13.5, pitch=15)
 
     return pdk.Deck(
         layers=[heat_layer, scatter_layer],
         initial_view_state=view,
         tooltip=tooltip,
-        map_style="light",
+        map_style=_MAP_STYLE,
     )
 
 
@@ -166,7 +193,7 @@ def risk_heatmap(
     center_lat: float | None = None,
     center_lon: float | None = None,
 ) -> pdk.Deck:
-    """Create a heatmap of predicted leak risk across the network."""
+    """3D risk heatmap with elevated columns for high-risk areas."""
     if center_lat is None:
         center_lat = pipes_df["mid_lat"].mean()
     if center_lon is None:
@@ -176,49 +203,66 @@ def risk_heatmap(
     df["risk"] = risk_scores
     df["risk_pct"] = (risk_scores * 100).round(1)
 
+    # Color by risk: green -> red
+    colors = []
+    for r in risk_scores:
+        if r < 0.3:
+            colors.append([34, 197, 94, 160])
+        elif r < 0.6:
+            colors.append([245, 158, 11, 190])
+        else:
+            colors.append([239, 68, 68, 220])
+    df["color"] = colors
+
+    # Elevation proportional to risk
+    df["elevation"] = (risk_scores * 500).astype(int)
+
+    column_layer = pdk.Layer(
+        "ColumnLayer",
+        data=df,
+        get_position=["mid_lon", "mid_lat"],
+        get_elevation="elevation",
+        elevation_scale=1,
+        get_fill_color="color",
+        radius=30,
+        pickable=True,
+        auto_highlight=True,
+        highlight_color=[255, 255, 255, 80],
+    )
+
     heat_layer = pdk.Layer(
         "HeatmapLayer",
         data=df,
         get_position=["mid_lon", "mid_lat"],
         get_weight="risk",
-        radiusPixels=50,
-        opacity=0.6,
-    )
-
-    # High-risk points as scatter overlay
-    high_risk = df[df["risk"] > 0.5].copy()
-    high_risk["color"] = [[229, 62, 62, 200]] * len(high_risk)
-
-    scatter_layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=high_risk,
-        get_position=["mid_lon", "mid_lat"],
-        get_radius=50,
-        get_fill_color="color",
-        pickable=True,
+        radiusPixels=60,
+        opacity=0.35,
+        threshold=0.03,
     )
 
     tooltip = {
         "html": (
-            "<b>Pipe:</b> {pipe_id}<br>"
+            "<div style='margin-bottom:4px'><b style='font-size:14px'>{pipe_id}</b></div>"
             "<b>Material:</b> {material}<br>"
             "<b>Age:</b> {age} years<br>"
-            "<b>Risk:</b> {risk_pct}%"
+            "<b>Risk:</b> <span style='color:#ef4444;font-weight:700'>{risk_pct}%</span>"
         ),
-        "style": {"backgroundColor": "#1a365d", "color": "white", "fontSize": "12px"},
+        "style": _TOOLTIP_STYLE,
     }
 
-    view = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=13, pitch=0)
+    view = pdk.ViewState(
+        latitude=center_lat, longitude=center_lon,
+        zoom=13.5, pitch=50, bearing=-20,
+    )
 
     return pdk.Deck(
-        layers=[heat_layer, scatter_layer],
+        layers=[heat_layer, column_layer],
         initial_view_state=view,
         tooltip=tooltip,
-        map_style="light",
+        map_style=_MAP_STYLE,
     )
 
 
 def _empty_map(lat: float, lon: float) -> pdk.Deck:
-    """Return an empty map centered at the given location."""
-    view = pdk.ViewState(latitude=lat, longitude=lon, zoom=12)
-    return pdk.Deck(layers=[], initial_view_state=view, map_style="light")
+    view = pdk.ViewState(latitude=lat, longitude=lon, zoom=12, pitch=15)
+    return pdk.Deck(layers=[], initial_view_state=view, map_style=_MAP_STYLE)
