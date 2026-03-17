@@ -214,9 +214,9 @@ export default function ModelPage({ data, loading, hasModel, onTrain, training }
         <div className="h-px flex-1 bg-slate-200" />
       </div>
       <div className="flex flex-wrap gap-3">
+        <DownloadBtn onClick={() => api.downloadModelReport()} color="purple" label="Model Report" sub="Metrics, confusion matrix, features" />
         <DownloadBtn onClick={() => api.downloadPipesCSV()} color="blue" label="Pipes CSV" sub="Pipe data with risk scores" />
         <DownloadBtn onClick={() => api.downloadEventsCSV()} color="amber" label="Events CSV" sub="Leak events data" />
-        <DownloadBtn onClick={() => api.downloadReport()} color="purple" label="Full Report" sub="HTML report with model metrics" />
       </div>
     </div>
   );
