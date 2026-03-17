@@ -29,6 +29,10 @@ data/external/
 models/
 *.joblib
 
+# Node / Frontend
+node_modules/
+frontend/dist/
+
 # IDE
 .idea/
 .vscode/

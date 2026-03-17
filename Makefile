@@ -1,10 +1,21 @@
-.PHONY: install run simulate train test lint clean
+.PHONY: install install-frontend dev backend frontend simulate train test lint format clean
 
 install:
 	pip install -e ".[dev]"
 
-run:
-	streamlit run src/pipe_leak/dashboard/app.py
+install-frontend:
+	cd frontend && npm install --legacy-peer-deps
+
+dev: ## Start both backend and frontend (use two terminals, or run each separately)
+	@echo "Run in two terminals:"
+	@echo "  make backend"
+	@echo "  make frontend"
+
+backend:
+	uvicorn pipe_leak.api.main:app --reload --host 0.0.0.0 --port 8000
+
+frontend:
+	cd frontend && npm run dev
 
 simulate:
 	python scripts/run_simulation.py
