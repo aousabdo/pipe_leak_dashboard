@@ -123,8 +123,9 @@ export default function MapPage({ data, loading }: Props) {
       </div>
 
       {/* Map */}
-      <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm" style={{ height: 520 }}>
+      <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm relative" style={{ height: 520 }}>
         <DeckGL
+          style={{ position: "absolute" as const, top: "0", left: "0", width: "100%", height: "100%" }}
           initialViewState={{
             ...center,
             zoom: 13,

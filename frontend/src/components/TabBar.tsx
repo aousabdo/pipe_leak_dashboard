@@ -1,10 +1,11 @@
-import { BarChart3, Map, FlaskConical, Cpu } from "lucide-react";
+import { BarChart3, Map, FlaskConical, Cpu, Info } from "lucide-react";
 
 const ICONS: Record<string, React.ReactNode> = {
   Overview: <BarChart3 className="w-4 h-4" />,
   Map: <Map className="w-4 h-4" />,
   Analysis: <FlaskConical className="w-4 h-4" />,
   Model: <Cpu className="w-4 h-4" />,
+  About: <Info className="w-4 h-4" />,
 };
 
 interface Props {

@@ -4,6 +4,12 @@ WNTR-based pipe network generation.
 Generates a realistic water distribution network with spatially correlated
 pipe attributes, placed over a configurable city center. Uses WNTR for
 hydraulic simulation to produce realistic pressures and flows.
+
+The network avoids the unrealistic perfect-grid look by:
+- Removing random edges to create dead-ends and irregular blocks
+- Varying block sizes across the network
+- Adding diagonal cross-connections
+- Adding larger jitter for organic street patterns
 """
 
 import numpy as np
@@ -19,67 +25,74 @@ def create_grid_network(
     config: SimulationConfig | None = None,
 ) -> wntr.network.WaterNetworkModel:
     """
-    Create a synthetic grid water network placed over a city center.
+    Create a synthetic water network with realistic irregular topology.
 
-    The network is a grid of pipes with a reservoir and tank, sized to
-    represent a single utility district (~500-1500 pipes).
-
-    Returns:
-        A WNTR WaterNetworkModel with junctions, pipes, reservoir, and tank.
+    Instead of a perfect grid, this:
+    - Uses variable spacing to mimic real city blocks
+    - Removes ~18% of grid edges to create dead-ends and irregular blocks
+    - Adds diagonal connector pipes for realism
+    - Adds larger random jitter to node positions
     """
     cfg = config or SIM_CONFIG
     rng = np.random.default_rng(cfg.seed)
 
     wn = wntr.network.WaterNetworkModel()
 
-    # Grid dimensions — aim for ~num_pipes total pipe segments
-    # A grid of NxM has N*(M-1) + M*(N-1) pipe segments
+    # Grid dimensions
     grid_side = int(np.ceil(np.sqrt(cfg.num_pipes / 2)))
-    grid_side = max(grid_side, 5)  # minimum 5x5
+    grid_side = max(grid_side, 5)
 
-    # Spacing in degrees (roughly 200m between junctions at Sacramento's latitude)
-    spacing_deg = 0.002  # ~200m
+    # Variable spacing: some blocks are wider, some narrower
+    base_spacing = 0.002  # ~200m
+    row_spacings = base_spacing * rng.uniform(0.6, 1.5, size=grid_side)
+    col_spacings = base_spacing * rng.uniform(0.6, 1.5, size=grid_side)
 
-    # Create junction nodes on the grid
+    # Cumulative offsets for each row/col
+    row_offsets = np.concatenate([[0], np.cumsum(row_spacings[:-1])])
+    col_offsets = np.concatenate([[0], np.cumsum(col_spacings[:-1])])
+    # Center the grid
+    row_offsets -= row_offsets.mean()
+    col_offsets -= col_offsets.mean()
+
+    # Create junction nodes with larger jitter
     node_coords = {}
     for row in range(grid_side):
         for col in range(grid_side):
             node_id = f"J-{row:03d}-{col:03d}"
-            lat = cfg.center_lat + (row - grid_side / 2) * spacing_deg
-            lon = cfg.center_lon + (col - grid_side / 2) * spacing_deg
+            lat = cfg.center_lat + row_offsets[row]
+            lon = cfg.center_lon + col_offsets[col]
 
-            # Add slight random jitter for realism (±20% of spacing)
-            lat += rng.uniform(-0.0004, 0.0004)
-            lon += rng.uniform(-0.0004, 0.0004)
+            # Larger random jitter for organic look (±35% of base spacing)
+            lat += rng.uniform(-0.0007, 0.0007)
+            lon += rng.uniform(-0.0007, 0.0007)
 
-            # Elevation varies smoothly across the grid (gentle slope)
-            base_elev = 15.0  # meters
-            elev = base_elev + row * 0.3 + col * 0.1 + rng.normal(0, 0.5)
+            # Elevation varies smoothly
+            base_elev = 15.0
+            elev = base_elev + row * 0.3 + col * 0.1 + rng.normal(0, 0.8)
 
             wn.add_junction(node_id, base_demand=0.003, elevation=elev)
             node_coords[node_id] = (lon, lat)
 
-    # Add a reservoir (water source) at one corner
-    res_lat = cfg.center_lat - (grid_side / 2 + 1) * spacing_deg
-    res_lon = cfg.center_lon - (grid_side / 2 + 1) * spacing_deg
+    # Add reservoir and tank
+    res_lat = cfg.center_lat + row_offsets[0] - base_spacing * 2
+    res_lon = cfg.center_lon + col_offsets[0] - base_spacing * 2
     wn.add_reservoir("R-001", base_head=60.0)
     node_coords["R-001"] = (res_lon, res_lat)
 
-    # Add a tank at the opposite corner
-    tank_lat = cfg.center_lat + (grid_side / 2 + 1) * spacing_deg
-    tank_lon = cfg.center_lon + (grid_side / 2 + 1) * spacing_deg
+    tank_lat = cfg.center_lat + row_offsets[-1] + base_spacing * 2
+    tank_lon = cfg.center_lon + col_offsets[-1] + base_spacing * 2
     wn.add_tank("T-001", elevation=30.0, init_level=5.0, max_level=10.0, diameter=15.0)
     node_coords["T-001"] = (tank_lon, tank_lat)
 
-    # Connect reservoir and tank to nearest grid junctions
-    corner_00 = f"J-000-000"
+    # Connect reservoir and tank
+    corner_00 = "J-000-000"
     corner_nn = f"J-{grid_side - 1:03d}-{grid_side - 1:03d}"
-
     wn.add_pipe("P-RES-IN", "R-001", corner_00, length=300, diameter=0.6, roughness=100)
     wn.add_pipe("P-TANK-IN", corner_nn, "T-001", length=300, diameter=0.5, roughness=100)
 
-    # Create horizontal and vertical pipe segments
-    pipe_count = 0
+    # Collect all potential pipe edges, then selectively remove some
+    pipe_edges = []
+
     for row in range(grid_side):
         for col in range(grid_side):
             current = f"J-{row:03d}-{col:03d}"
@@ -87,31 +100,98 @@ def create_grid_network(
             # Horizontal pipe (to the right)
             if col < grid_side - 1:
                 neighbor = f"J-{row:03d}-{col + 1:03d}"
-                pipe_id = f"P-{pipe_count:04d}"
-                length = rng.uniform(150, 300)  # meters
-                # Main arteries (every 5th row/col) are larger diameter
-                if row % 5 == 0 or col % 5 == 0:
-                    diameter = rng.choice([0.3, 0.4, 0.5])  # 12-20 inches
-                else:
-                    diameter = rng.choice([0.1, 0.15, 0.2])  # 4-8 inches
-                wn.add_pipe(pipe_id, current, neighbor, length=length,
-                           diameter=diameter, roughness=rng.uniform(80, 130))
-                pipe_count += 1
+                is_artery = (row % 5 == 0 or col % 5 == 0)
+                pipe_edges.append((current, neighbor, is_artery, "horizontal"))
 
             # Vertical pipe (downward)
             if row < grid_side - 1:
                 neighbor = f"J-{row + 1:03d}-{col:03d}"
-                pipe_id = f"P-{pipe_count:04d}"
-                length = rng.uniform(150, 300)
-                if row % 5 == 0 or col % 5 == 0:
-                    diameter = rng.choice([0.3, 0.4, 0.5])
-                else:
-                    diameter = rng.choice([0.1, 0.15, 0.2])
-                wn.add_pipe(pipe_id, current, neighbor, length=length,
-                           diameter=diameter, roughness=rng.uniform(80, 130))
-                pipe_count += 1
+                is_artery = (row % 5 == 0 or col % 5 == 0)
+                pipe_edges.append((current, neighbor, is_artery, "vertical"))
 
-    # Store coordinates for later geometry extraction
+    # Add diagonal connections (~5% of grid cells)
+    for row in range(grid_side - 1):
+        for col in range(grid_side - 1):
+            if rng.random() < 0.05:
+                current = f"J-{row:03d}-{col:03d}"
+                diag = f"J-{row + 1:03d}-{col + 1:03d}"
+                pipe_edges.append((current, diag, False, "diagonal"))
+
+    # Remove random non-artery edges to create irregular topology
+    # Never remove arteries (every 5th row/col) to keep the network connected
+    # Remove ~18% of non-artery edges
+    filtered_edges = []
+    for start, end, is_artery, direction in pipe_edges:
+        if is_artery:
+            filtered_edges.append((start, end, is_artery, direction))
+        else:
+            if rng.random() > 0.18:
+                filtered_edges.append((start, end, is_artery, direction))
+
+    # Ensure connectivity: check that all nodes can be reached from the reservoir
+    # by building an adjacency set and doing BFS
+    adjacency = {}
+    all_nodes = set(node_coords.keys())
+    for start, end, _, _ in filtered_edges:
+        adjacency.setdefault(start, set()).add(end)
+        adjacency.setdefault(end, set()).add(start)
+    # Add reservoir/tank connections
+    adjacency.setdefault("R-001", set()).add(corner_00)
+    adjacency.setdefault(corner_00, set()).add("R-001")
+    adjacency.setdefault(corner_nn, set()).add("T-001")
+    adjacency.setdefault("T-001", set()).add(corner_nn)
+
+    # BFS from reservoir
+    visited = set()
+    queue = ["R-001"]
+    while queue:
+        node = queue.pop(0)
+        if node in visited:
+            continue
+        visited.add(node)
+        for neighbor in adjacency.get(node, []):
+            if neighbor not in visited:
+                queue.append(neighbor)
+
+    # Any junction not visited needs to be reconnected
+    # Add back edges to reconnect disconnected nodes
+    disconnected = all_nodes - visited
+    for node in disconnected:
+        if not node.startswith("J-"):
+            continue
+        # Parse row/col
+        parts = node.split("-")
+        row, col = int(parts[1]), int(parts[2])
+        # Try to connect to nearest visited neighbor
+        for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < grid_side and 0 <= nc < grid_side:
+                neighbor = f"J-{nr:03d}-{nc:03d}"
+                if neighbor in visited:
+                    is_artery = (row % 5 == 0 or col % 5 == 0)
+                    filtered_edges.append((node, neighbor, is_artery, "reconnect"))
+                    adjacency.setdefault(node, set()).add(neighbor)
+                    adjacency.setdefault(neighbor, set()).add(node)
+                    visited.add(node)
+                    break
+
+    # Now add all pipes
+    pipe_count = 0
+    for start, end, is_artery, direction in filtered_edges:
+        pipe_id = f"P-{pipe_count:04d}"
+        length = rng.uniform(120, 350)
+
+        if is_artery:
+            diameter = rng.choice([0.3, 0.4, 0.5])
+        elif direction == "diagonal":
+            diameter = rng.choice([0.1, 0.15])
+        else:
+            diameter = rng.choice([0.1, 0.15, 0.2])
+
+        wn.add_pipe(pipe_id, start, end, length=length,
+                     diameter=diameter, roughness=rng.uniform(80, 130))
+        pipe_count += 1
+
     wn._node_coords = node_coords
     return wn
 
@@ -146,7 +226,6 @@ def _assign_spatially_correlated_attributes(
         if zone_count == 0:
             continue
         install_years[mask] = rng.integers(year_min, year_max, size=zone_count)
-        # Material from this era's options
         era_materials = cfg.material_by_era[era]
         materials.extend(rng.choice(era_materials, size=zone_count).tolist())
 
@@ -165,7 +244,6 @@ def _assign_spatially_correlated_attributes(
         if zone_count == 0:
             continue
         primary_soil = zone_soils[zone_id]
-        # 70% primary soil, 30% random from others
         soils = []
         for _ in range(zone_count):
             if rng.random() < 0.7:
@@ -179,9 +257,9 @@ def _assign_spatially_correlated_attributes(
     pipes_df["soil_type"] = soil_types
     pipes_df["soil_corrosivity"] = soil_corrosivity
 
-    # Diameter category from WNTR diameter (meters -> descriptive)
+    # Diameter category
     def diameter_category(d_m):
-        d_in = d_m * 39.37  # meters to inches
+        d_in = d_m * 39.37
         if d_in <= 6:
             return "small (2-6)"
         elif d_in <= 12:
@@ -196,7 +274,7 @@ def _assign_spatially_correlated_attributes(
     # Depth (feet) — correlated with diameter
     pipes_df["depth_ft"] = np.where(
         pipes_df["diameter_m"] > 0.3,
-        rng.uniform(5, 8, size=n),  # larger pipes deeper
+        rng.uniform(5, 8, size=n),
         rng.uniform(3, 5.5, size=n),
     )
 
@@ -205,13 +283,13 @@ def _assign_spatially_correlated_attributes(
         np.maximum(0.1, pipes_df["age"].values / 25), size=n
     )
 
-    # Last inspection (days ago) — newer pipes inspected more recently
+    # Last inspection (days ago)
     base_inspection = rng.integers(0, 365 * 3, size=n)
     pipes_df["last_inspection_days"] = np.where(
         pipes_df["age"] < 20, np.minimum(base_inspection, 365), base_inspection
     )
 
-    # Traffic load (1-10) — higher near main arteries (larger pipes)
+    # Traffic load
     pipes_df["traffic_load"] = np.where(
         pipes_df["diameter_m"] > 0.25,
         rng.integers(5, 11, size=n),
@@ -224,23 +302,14 @@ def _assign_spatially_correlated_attributes(
 def run_hydraulic_simulation(
     wn: wntr.network.WaterNetworkModel,
 ) -> dict:
-    """
-    Run WNTR hydraulic simulation and extract per-pipe results.
-
-    Returns:
-        Dict with pipe_id -> {pressure_avg, velocity_avg} from simulation.
-    """
-    # Run a 24-hour simulation with 1-hour timesteps
+    """Run WNTR hydraulic simulation and extract per-pipe results."""
     wn.options.time.duration = 24 * 3600
     wn.options.time.hydraulic_timestep = 3600
 
     sim = wntr.sim.EpanetSimulator(wn)
     results = sim.run_sim()
 
-    # Extract average pressure at each node (across all timesteps)
     node_pressure = results.node["pressure"].mean()
-
-    # Extract pipe-level results
     pipe_velocity = results.link["velocity"].mean()
     pipe_flowrate = results.link["flowrate"].mean()
 
@@ -250,7 +319,6 @@ def run_hydraulic_simulation(
         start_node = pipe.start_node_name
         end_node = pipe.end_node_name
 
-        # Average pressure at pipe endpoints
         p_start = node_pressure.get(start_node, 30.0)
         p_end = node_pressure.get(end_node, 30.0)
 
@@ -269,20 +337,12 @@ def build_pipe_network(
     """
     Build a complete pipe network GeoDataFrame with realistic attributes.
 
-    This is the main entry point for network generation. It:
-    1. Creates a WNTR grid network
-    2. Runs hydraulic simulation for realistic pressures
-    3. Assigns spatially correlated attributes
-    4. Returns a GeoDataFrame with LineString geometries
-
-    Returns:
-        GeoDataFrame with one row per pipe, including geometry, material,
-        age, hydraulic data, and other attributes.
+    This is the main entry point for network generation.
     """
     cfg = config or SIM_CONFIG
     rng = np.random.default_rng(cfg.seed)
 
-    print(f"Creating grid network (~{cfg.num_pipes} pipes)...")
+    print(f"Creating realistic network (~{cfg.num_pipes} pipes)...")
     wn = create_grid_network(cfg)
     node_coords = wn._node_coords
 
@@ -303,7 +363,6 @@ def build_pipe_network(
             mid_lat = (lat1 + lat2) / 2
             mid_lon = (lon1 + lon2) / 2
         else:
-            # Fallback for reservoir/tank connections
             mid_lat = cfg.center_lat
             mid_lon = cfg.center_lon
             geom = Point(mid_lon, mid_lat)

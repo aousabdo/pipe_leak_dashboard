@@ -2,9 +2,17 @@ interface Props {
   numPipes?: number;
   numEvents?: number;
   hasModel: boolean;
+  modelType?: string;
 }
 
-export default function Header({ numPipes, numEvents, hasModel }: Props) {
+const MODEL_LABELS: Record<string, string> = {
+  xgboost: "XGBoost",
+  random_forest: "Random Forest",
+  logistic_regression: "Logistic Reg.",
+  gradient_boosting: "Gradient Boost",
+};
+
+export default function Header({ numPipes, numEvents, hasModel, modelType }: Props) {
   return (
     <header className="bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-900 px-6 py-4 shadow-lg">
       <div className="flex items-center justify-between">
@@ -13,7 +21,7 @@ export default function Header({ numPipes, numEvents, hasModel }: Props) {
             <span className="text-2xl">💧</span> Water Network Leak Predictor
           </h1>
           <p className="text-sm text-slate-300 mt-0.5">
-            Hydraulic simulation &bull; Weibull deterioration &bull; XGBoost risk scoring
+            Hydraulic simulation &bull; Weibull deterioration &bull; ML risk scoring
           </p>
         </div>
         {numPipes != null && (
@@ -22,7 +30,7 @@ export default function Header({ numPipes, numEvents, hasModel }: Props) {
             <StatusPill label="Events" value={(numEvents ?? 0).toLocaleString()} color="amber" />
             <StatusPill
               label="Model"
-              value={hasModel ? "Trained" : "Not trained"}
+              value={hasModel ? (MODEL_LABELS[modelType || ""] || "Trained") : "Not trained"}
               color={hasModel ? "green" : "slate"}
             />
           </div>

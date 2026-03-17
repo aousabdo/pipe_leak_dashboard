@@ -16,7 +16,8 @@ export const api = {
   getStatus: () => request<any>("/status"),
   simulate: (params: { num_pipes: number; sim_years: number; seed: number }) =>
     request<any>("/simulate", { method: "POST", body: JSON.stringify(params) }),
-  train: () => request<any>("/train", { method: "POST" }),
+  train: (modelType: string = "xgboost") =>
+    request<any>("/train", { method: "POST", body: JSON.stringify({ model_type: modelType }) }),
   getOverview: () => request<any>("/overview"),
   getPipes: () => request<any>("/pipes"),
   getEvents: (filters?: any) =>

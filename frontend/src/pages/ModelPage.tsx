@@ -39,7 +39,14 @@ export default function ModelPage({ data, loading, hasModel, onTrain, training }
     return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
   }
 
-  const { metrics, confusion_matrix, roc_curve, pr_curve, calibration, feature_importance } = data;
+  const { metrics, confusion_matrix, roc_curve, pr_curve, calibration, feature_importance, model_type, optimal_threshold } = data;
+
+  const MODEL_LABELS: Record<string, string> = {
+    xgboost: "XGBoost",
+    random_forest: "Random Forest",
+    logistic_regression: "Logistic Regression",
+    gradient_boosting: "Gradient Boosting",
+  };
 
   // ROC curve data
   const rocData = roc_curve?.fpr?.map((fpr: number, i: number) => ({
@@ -71,6 +78,23 @@ export default function ModelPage({ data, loading, hasModel, onTrain, training }
 
   return (
     <div className="space-y-6">
+      {/* Model Info Banner */}
+      <div className="bg-gradient-to-r from-purple-50 to-fuchsia-50 border border-purple-200 rounded-xl px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-purple-800">
+            Model: {MODEL_LABELS[model_type] || model_type || "XGBoost"}
+          </span>
+          <span className="text-xs text-purple-500">|</span>
+          <span className="text-sm text-purple-600">
+            Optimal threshold: {(optimal_threshold || 0.5).toFixed(3)}
+          </span>
+          <span className="text-xs text-purple-500">|</span>
+          <span className="text-sm text-purple-600">
+            {metrics.n_positive || 0} positive / {metrics.n_negative || 0} negative samples
+          </span>
+        </div>
+      </div>
+
       {/* Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {[

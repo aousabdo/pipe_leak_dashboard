@@ -1,4 +1,4 @@
-import { Droplets, Zap, Brain, Settings } from "lucide-react";
+import { Droplets, Zap, Brain, Settings, ChevronLeft, ChevronRight, Cpu } from "lucide-react";
 
 interface Props {
   params: { num_pipes: number; sim_years: number; seed: number };
@@ -10,7 +10,18 @@ interface Props {
   hasData: boolean;
   hasModel: boolean;
   dirty: boolean;
+  modelType: string;
+  onModelTypeChange: (type: string) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
+
+const MODEL_OPTIONS = [
+  { value: "xgboost", label: "XGBoost" },
+  { value: "random_forest", label: "Random Forest" },
+  { value: "logistic_regression", label: "Logistic Regression" },
+  { value: "gradient_boosting", label: "Gradient Boosting" },
+];
 
 export default function Sidebar({
   params,
@@ -22,21 +33,53 @@ export default function Sidebar({
   hasData,
   hasModel,
   dirty,
+  modelType,
+  onModelTypeChange,
+  collapsed,
+  onToggleCollapse,
 }: Props) {
   const set = (key: string, val: number) => onParamsChange({ ...params, [key]: val });
 
-  return (
-    <aside className="w-72 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col shadow-sm">
-      {/* Logo */}
-      <div className="px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2">
+  if (collapsed) {
+    return (
+      <aside className="w-12 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col items-center shadow-sm">
+        <button
+          onClick={onToggleCollapse}
+          className="w-8 h-8 mt-4 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+          title="Expand sidebar"
+        >
+          <ChevronRight className="w-4 h-4 text-slate-600" />
+        </button>
+        <div className="mt-4">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
             <Droplets className="w-4 h-4 text-white" />
           </div>
-          <div>
-            <div className="text-sm font-bold text-slate-800">Leak Predictor</div>
-            <div className="text-[10px] text-slate-400 uppercase tracking-wider">Control Panel</div>
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="w-72 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col shadow-sm">
+      {/* Logo + Collapse */}
+      <div className="px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+              <Droplets className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-slate-800">Leak Predictor</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Control Panel</div>
+            </div>
           </div>
+          <button
+            onClick={onToggleCollapse}
+            className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
+            title="Collapse sidebar"
+          >
+            <ChevronLeft className="w-4 h-4 text-slate-400" />
+          </button>
         </div>
       </div>
 
@@ -70,6 +113,24 @@ export default function Sidebar({
           </div>
         </Section>
 
+        {/* Model Selection */}
+        <Section title="ML Model" icon={<Cpu className="w-3.5 h-3.5" />}>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Algorithm</label>
+            <select
+              value={modelType}
+              onChange={(e) => onModelTypeChange(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-400"
+            >
+              {MODEL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </Section>
+
         {/* Actions */}
         <Section title="Actions" icon={<Zap className="w-3.5 h-3.5" />}>
           <button
@@ -86,9 +147,9 @@ export default function Sidebar({
                 <Spinner /> Generating...
               </span>
             ) : dirty ? (
-              "⚡ Regenerate Network"
+              "Regenerate Network"
             ) : (
-              "🔄 Generate Network"
+              "Generate Network"
             )}
           </button>
 
@@ -114,7 +175,7 @@ export default function Sidebar({
       {/* Footer */}
       <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
         <p className="text-[10px] text-slate-400 text-center">
-          WNTR Simulation &bull; XGBoost ML &bull; v2.0
+          WNTR Simulation &bull; Multi-Model ML &bull; v3.0
         </p>
       </div>
     </aside>

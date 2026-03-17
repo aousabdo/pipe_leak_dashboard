@@ -24,14 +24,15 @@ class SimulationConfig:
     center_lat: float = 38.5816
     center_lon: float = -121.4944
     # Weibull deterioration parameters by material (shape beta, scale eta in years)
+    # Tuned so 10-25% of pipes experience a leak per year for aging infrastructure
     weibull_params: dict = field(
         default_factory=lambda: {
-            "Cast Iron": {"beta": 2.5, "eta": 55},
-            "Ductile Iron": {"beta": 2.2, "eta": 75},
-            "Steel": {"beta": 2.0, "eta": 65},
-            "Asbestos Cement": {"beta": 2.4, "eta": 50},
-            "PVC": {"beta": 1.8, "eta": 110},
-            "HDPE": {"beta": 1.6, "eta": 130},
+            "Cast Iron": {"beta": 2.5, "eta": 28},
+            "Ductile Iron": {"beta": 2.2, "eta": 40},
+            "Steel": {"beta": 2.0, "eta": 34},
+            "Asbestos Cement": {"beta": 2.4, "eta": 26},
+            "PVC": {"beta": 1.8, "eta": 55},
+            "HDPE": {"beta": 1.6, "eta": 70},
         }
     )
     # Material assignment by installation decade
@@ -67,7 +68,7 @@ class SimulationConfig:
 class MLConfig:
     """Configuration for ML pipeline."""
 
-    prediction_horizon_days: int = 90
+    prediction_horizon_days: int = 365
     test_fraction: float = 0.2  # last 20% of time for testing
     n_cv_folds: int = 5
     random_state: int = 42

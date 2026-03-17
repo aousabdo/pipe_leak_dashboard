@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
 import { useAsync } from "./hooks/useApi";
 import Header from "./components/Header";
@@ -10,8 +10,9 @@ import OverviewPage from "./pages/OverviewPage";
 import MapPage from "./pages/MapPage";
 import AnalysisPage from "./pages/AnalysisPage";
 import ModelPage from "./pages/ModelPage";
+import AboutPage from "./pages/AboutPage";
 
-const TABS = ["Overview", "Map", "Analysis", "Model"] as const;
+const TABS = ["Overview", "Map", "Analysis", "Model", "About"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function App() {
@@ -19,6 +20,8 @@ export default function App() {
   const [params, setParams] = useState({ num_pipes: 1000, sim_years: 5, seed: 42 });
   const [appliedParams, setAppliedParams] = useState<typeof params | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [modelType, setModelType] = useState("xgboost");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const status = useAsync<any>();
   const overview = useAsync<any>();
@@ -54,7 +57,7 @@ export default function App() {
     }
   }, []);
 
-  // Initial load — check status and load if data exists
+  // Initial load
   useEffect(() => {
     (async () => {
       try {
@@ -86,7 +89,7 @@ export default function App() {
   const handleTrain = useCallback(async () => {
     setTraining(true);
     try {
-      await api.train();
+      await api.train(modelType);
       await Promise.all([
         model.run(() => api.getModel()),
         overview.run(() => api.getOverview()),
@@ -97,7 +100,7 @@ export default function App() {
     } finally {
       setTraining(false);
     }
-  }, []);
+  }, [modelType]);
 
   const hasData = overview.data !== null;
   const hasModel = model.data !== null;
@@ -115,6 +118,10 @@ export default function App() {
         hasData={hasData}
         hasModel={hasModel}
         dirty={dirty}
+        modelType={modelType}
+        onModelTypeChange={setModelType}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
       {/* Main Content */}
@@ -123,6 +130,7 @@ export default function App() {
           numPipes={overview.data?.kpis?.total_pipes}
           numEvents={overview.data?.kpis?.total_events}
           hasModel={hasModel}
+          modelType={model.data?.model_type}
         />
 
         {dirty && hasData && (
@@ -151,13 +159,14 @@ export default function App() {
               {tab === "Map" && <MapPage data={pipes.data} loading={pipes.loading} />}
               {tab === "Analysis" && <AnalysisPage data={analysis.data} loading={analysis.loading} />}
               {tab === "Model" && <ModelPage data={model.data} loading={model.loading} hasModel={hasModel} onTrain={handleTrain} training={training} />}
+              {tab === "About" && <AboutPage />}
             </>
           )}
         </main>
       </div>
 
       {(simulating || training) && (
-        <LoadingOverlay message={simulating ? "Generating pipe network & simulating leaks..." : "Training XGBoost model..."} />
+        <LoadingOverlay message={simulating ? "Generating pipe network & simulating leaks..." : `Training ${modelType.replace('_', ' ')} model...`} />
       )}
     </div>
   );

@@ -54,12 +54,12 @@ class AppState:
         self.importance = None
         self.risk_scores = None
 
-    def train(self):
+    def train(self, model_type: str = "xgboost"):
         train_df, test_df = temporal_train_test_split(
             self.pipes_gdf, self.events_df,
             horizon_days=ML_CONFIG.prediction_horizon_days,
         )
-        model = LeakClassifier()
+        model = LeakClassifier(model_type=model_type)
         model.train(train_df, optimize=False)
 
         preds, probs = model.predict(test_df)
@@ -89,6 +89,7 @@ class AppState:
             "num_pipes": len(self.pipes_gdf) if self.pipes_gdf is not None else 0,
             "num_events": len(self.events_df) if self.events_df is not None and not self.events_df.empty else 0,
             "sim_params": self.sim_params,
+            "model_type": self.model.model_type if self.model is not None else None,
         }
 
     def get_overview(self):
@@ -303,6 +304,8 @@ class AppState:
             "pr_curve": pr_data,
             "calibration": cal_data,
             "feature_importance": imp_data,
+            "model_type": self.model.model_type if self.model else "xgboost",
+            "optimal_threshold": self.model.optimal_threshold if self.model else 0.5,
         }
 
     def get_filter_options(self):

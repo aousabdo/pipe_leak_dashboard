@@ -41,6 +41,10 @@ class SimulationParams(BaseModel):
     seed: int = 42
 
 
+class TrainParams(BaseModel):
+    model_type: str = "xgboost"
+
+
 class FilterParams(BaseModel):
     severity: list[str] | None = None
     material: list[str] | None = None
@@ -67,12 +71,12 @@ def run_simulation(params: SimulationParams):
 
 
 @app.post("/api/train")
-def train_model():
+def train_model(params: TrainParams = TrainParams()):
     """Train the ML model on current simulation data."""
     if not state.has_data:
         raise HTTPException(status_code=400, detail="No simulation data. Run /api/simulate first.")
     try:
-        state.train()
+        state.train(model_type=params.model_type)
         return state.get_status()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
