@@ -7,9 +7,13 @@ interface Props {
 
 const MODEL_LABELS: Record<string, string> = {
   xgboost: "XGBoost",
+  lightgbm: "LightGBM",
   random_forest: "Random Forest",
   logistic_regression: "Logistic Reg.",
   gradient_boosting: "Gradient Boost",
+  stacking_ensemble: "Stacking",
+  voting_ensemble: "Voting",
+  blended_boosting: "Blended Boost",
 };
 
 export default function Header({ numPipes, numEvents, hasModel, modelType }: Props) {

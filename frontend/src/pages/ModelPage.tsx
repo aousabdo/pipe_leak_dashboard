@@ -21,7 +21,8 @@ export default function ModelPage({ data, loading, hasModel, onTrain, training }
           <div className="text-6xl mb-4">🧠</div>
           <h2 className="text-xl font-bold text-slate-700 mb-2">No Model Trained Yet</h2>
           <p className="text-slate-500 mb-4 max-w-sm">
-            Train an XGBoost model to predict pipe leak probabilities.
+            Select a model in the sidebar and click Train to predict pipe leak probabilities.
+            Try ensemble models for best accuracy.
           </p>
           <button
             onClick={onTrain}
@@ -43,9 +44,13 @@ export default function ModelPage({ data, loading, hasModel, onTrain, training }
 
   const MODEL_LABELS: Record<string, string> = {
     xgboost: "XGBoost",
+    lightgbm: "LightGBM",
     random_forest: "Random Forest",
     logistic_regression: "Logistic Regression",
     gradient_boosting: "Gradient Boosting",
+    stacking_ensemble: "Stacking Ensemble (XGB + LGBM + RF + ExtraTrees → LR meta)",
+    voting_ensemble: "Voting Ensemble (XGB + LGBM + RF + GB + MLP)",
+    blended_boosting: "Blended Boosting (2×XGB + 2×LGBM)",
   };
 
   // ROC curve data
