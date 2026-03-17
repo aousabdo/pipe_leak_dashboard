@@ -225,60 +225,80 @@ def create_grid_network(
             if rng.random() > 0.18:
                 filtered_edges.append((start, end, is_artery, direction))
 
-    # Ensure connectivity: check that all nodes can be reached from the reservoir
-    # by building an adjacency set and doing BFS
+    # Find connected components via BFS and keep only the largest one.
+    # The river may split the grid into multiple disconnected sub-networks.
     adjacency = {}
-    all_nodes = set(node_coords.keys())
+    all_junction_nodes = {n for n in node_coords if n.startswith("J-")}
     for start, end, _, _ in filtered_edges:
         adjacency.setdefault(start, set()).add(end)
         adjacency.setdefault(end, set()).add(start)
-    # Add reservoir/tank connections
-    if corner_00:
-        adjacency.setdefault("R-001", set()).add(corner_00)
-        adjacency.setdefault(corner_00, set()).add("R-001")
-    if corner_nn:
-        adjacency.setdefault(corner_nn, set()).add("T-001")
-        adjacency.setdefault("T-001", set()).add(corner_nn)
 
-    # BFS from reservoir
-    visited = set()
-    queue = ["R-001"]
-    while queue:
-        node = queue.pop(0)
-        if node in visited:
-            continue
-        visited.add(node)
-        for neighbor in adjacency.get(node, []):
-            if neighbor not in visited:
-                queue.append(neighbor)
+    # Find all connected components (junction nodes only)
+    remaining = set(all_junction_nodes)
+    components = []
+    while remaining:
+        seed = next(iter(remaining))
+        component = set()
+        queue = [seed]
+        while queue:
+            node = queue.pop(0)
+            if node in component:
+                continue
+            component.add(node)
+            for neighbor in adjacency.get(node, []):
+                if neighbor in remaining and neighbor not in component:
+                    queue.append(neighbor)
+        components.append(component)
+        remaining -= component
 
-    # Any junction not visited needs to be reconnected
-    # Add back edges to reconnect disconnected nodes
-    disconnected = all_nodes - visited
+    # Keep the largest component
+    main_component = max(components, key=len)
+    disconnected = all_junction_nodes - main_component
+
+    # Remove initial reservoir/tank pipes before removing nodes
+    for pipe_name in ["P-TANK-IN", "P-RES-IN"]:
+        if pipe_name in wn.pipe_name_list:
+            pipe_obj = wn.get_link(pipe_name)
+            sn = pipe_obj.start_node_name
+            en = pipe_obj.end_node_name
+            if sn in disconnected or en in disconnected:
+                wn.remove_link(pipe_name)
+
+    # Remove disconnected nodes from the WNTR model
     for node in disconnected:
-        if not node.startswith("J-"):
-            continue
-        if node in excluded_nodes:
-            continue
-        # Parse row/col
-        parts = node.split("-")
-        row, col = int(parts[1]), int(parts[2])
-        # Try to connect to nearest visited neighbor
-        for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < grid_side and 0 <= nc < grid_side:
-                neighbor = f"J-{nr:03d}-{nc:03d}"
-                if neighbor in visited and neighbor not in excluded_nodes:
-                    c1 = node_coords[node]
-                    c2 = node_coords[neighbor]
-                    if _pipe_crosses_river(c1[0], c1[1], c2[0], c2[1], river_zone):
-                        continue
-                    is_artery = (row % 5 == 0 or col % 5 == 0)
-                    filtered_edges.append((node, neighbor, is_artery, "reconnect"))
-                    adjacency.setdefault(node, set()).add(neighbor)
-                    adjacency.setdefault(neighbor, set()).add(node)
-                    visited.add(node)
-                    break
+        if node in wn.junction_name_list:
+            wn.remove_node(node)
+        if node in node_coords:
+            del node_coords[node]
+
+    # Only keep edges whose both endpoints are in the main component
+    filtered_edges = [
+        (s, e, a, d) for s, e, a, d in filtered_edges
+        if s in main_component and e in main_component
+    ]
+
+    # Helper: find nearest junction in main component to a given coordinate
+    def _nearest_main_junction(lon, lat):
+        best_dist, best = float("inf"), None
+        for nid in main_component:
+            if nid in node_coords:
+                nlon, nlat = node_coords[nid]
+                d = (nlon - lon) ** 2 + (nlat - lat) ** 2
+                if d < best_dist:
+                    best_dist, best = d, nid
+        return best
+
+    # Connect reservoir to main component
+    if "P-RES-IN" not in wn.pipe_name_list:
+        best = _nearest_main_junction(*node_coords["R-001"])
+        if best:
+            wn.add_pipe("P-RES-IN", "R-001", best, length=300, diameter=0.6, roughness=100)
+
+    # Connect tank to main component
+    if "P-TANK-IN" not in wn.pipe_name_list:
+        best = _nearest_main_junction(*node_coords["T-001"])
+        if best:
+            wn.add_pipe("P-TANK-IN", best, "T-001", length=300, diameter=0.5, roughness=100)
 
     # Now add all pipes
     pipe_count = 0
