@@ -298,9 +298,9 @@ export default function AnalysisPage({ data, loading }: Props) {
         <div className="h-px flex-1 bg-slate-200" />
       </div>
       <div className="flex flex-wrap gap-3">
+        <DownloadBtn onClick={() => api.downloadAnalysisReport()} color="purple" label="Analysis Report" sub="Trends, costs, materials" />
         <DownloadBtn onClick={() => api.downloadEventsCSV()} color="amber" label="Events CSV" sub="Leak events data" />
         <DownloadBtn onClick={() => api.downloadPipesCSV()} color="blue" label="Pipes CSV" sub="Pipe network data" />
-        <DownloadBtn onClick={() => api.downloadReport()} color="purple" label="Full Report" sub="HTML analysis report" />
       </div>
     </div>
   );

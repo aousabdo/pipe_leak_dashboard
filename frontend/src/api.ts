@@ -36,5 +36,7 @@ export const api = {
   getFilters: () => request<any>("/filters"),
   downloadPipesCSV: () => downloadFile("/download/pipes", "pipe_network_data.csv"),
   downloadEventsCSV: () => downloadFile("/download/events", "leak_events_data.csv"),
-  downloadReport: () => downloadFile("/download/report", "leak_analysis_report.html"),
+  downloadReport: () => downloadFile("/download/report", "overview_report.html"),
+  downloadAnalysisReport: () => downloadFile("/download/report/analysis", "analysis_report.html"),
+  downloadModelReport: () => downloadFile("/download/report/model", "model_report.html"),
 };

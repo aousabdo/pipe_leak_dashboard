@@ -104,8 +104,8 @@ class LeakClassifier:
 
         scale_pos_weight = n_neg / max(n_pos, 1)
 
-        # Apply SMOTE resampling for stacking/voting ensembles (better class balance)
-        use_smote = self.model_type in ("stacking_ensemble", "voting_ensemble")
+        # Apply SMOTE resampling for all models (better class balance)
+        use_smote = self.model_type not in ("logistic_regression",)
         if use_smote and n_pos >= 6:
             smote = SMOTE(
                 sampling_strategy=0.75,  # minority becomes 75% of majority

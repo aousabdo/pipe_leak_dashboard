@@ -60,7 +60,7 @@ class AppState:
             horizon_days=ML_CONFIG.prediction_horizon_days,
         )
         model = LeakClassifier(model_type=model_type)
-        model.train(train_df, optimize=False)
+        model.train(train_df, optimize=(model_type == "xgboost"))
 
         preds, probs = model.predict(test_df)
         y_test = test_df["target"].values
