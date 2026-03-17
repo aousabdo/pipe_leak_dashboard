@@ -12,6 +12,15 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   return res.json();
 }
 
+function downloadFile(path: string, fallbackName: string) {
+  const link = document.createElement("a");
+  link.href = `${BASE}${path}`;
+  link.download = fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 export const api = {
   getStatus: () => request<any>("/status"),
   simulate: (params: { num_pipes: number; sim_years: number; seed: number }) =>
@@ -25,4 +34,7 @@ export const api = {
   getAnalysis: () => request<any>("/analysis"),
   getModel: () => request<any>("/model"),
   getFilters: () => request<any>("/filters"),
+  downloadPipesCSV: () => downloadFile("/download/pipes", "pipe_network_data.csv"),
+  downloadEventsCSV: () => downloadFile("/download/events", "leak_events_data.csv"),
+  downloadReport: () => downloadFile("/download/report", "leak_analysis_report.html"),
 };

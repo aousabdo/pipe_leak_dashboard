@@ -15,10 +15,67 @@ The network avoids the unrealistic perfect-grid look by:
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, Polygon
+from shapely.ops import unary_union
 import wntr
 
 from pipe_leak.config import SIM_CONFIG, SimulationConfig
+
+
+def _build_river_exclusion_zones() -> Polygon:
+    """
+    Build exclusion polygons for the Sacramento and American rivers.
+
+    Returns a single Shapely polygon (union) representing water bodies
+    that should not contain any pipe network infrastructure.
+    """
+    # Sacramento River path (north to south through downtown)
+    sacramento_river = LineString([
+        (-121.530, 38.620),
+        (-121.525, 38.610),
+        (-121.520, 38.600),
+        (-121.518, 38.595),
+        (-121.517, 38.590),
+        (-121.515, 38.585),
+        (-121.513, 38.580),
+        (-121.512, 38.575),
+        (-121.510, 38.570),
+        (-121.508, 38.565),
+        (-121.506, 38.560),
+        (-121.504, 38.555),
+        (-121.502, 38.550),
+        (-121.500, 38.545),
+        (-121.498, 38.540),
+        (-121.496, 38.535),
+    ])
+
+    # American River (flows west into Sacramento River)
+    american_river = LineString([
+        (-121.518, 38.595),
+        (-121.510, 38.598),
+        (-121.500, 38.600),
+        (-121.490, 38.601),
+        (-121.480, 38.600),
+        (-121.470, 38.598),
+        (-121.460, 38.595),
+        (-121.450, 38.592),
+        (-121.440, 38.590),
+    ])
+
+    # Buffer rivers: ~0.0015 degrees ≈ 150m width for Sacramento,
+    # ~0.001 degrees ≈ 100m for American
+    sac_buffer = sacramento_river.buffer(0.0018)
+    amer_buffer = american_river.buffer(0.0013)
+
+    return unary_union([sac_buffer, amer_buffer])
+
+
+def _pipe_crosses_river(
+    lon1: float, lat1: float, lon2: float, lat2: float, river_zone: Polygon
+) -> bool:
+    """Check if a pipe segment crosses the river exclusion zone."""
+    pipe_line = LineString([(lon1, lat1), (lon2, lat2)])
+    return pipe_line.intersects(river_zone)
 
 
 def create_grid_network(
@@ -38,6 +95,9 @@ def create_grid_network(
 
     wn = wntr.network.WaterNetworkModel()
 
+    # Build river exclusion zone
+    river_zone = _build_river_exclusion_zones()
+
     # Grid dimensions
     grid_side = int(np.ceil(np.sqrt(cfg.num_pipes / 2)))
     grid_side = max(grid_side, 5)
@@ -54,8 +114,9 @@ def create_grid_network(
     row_offsets -= row_offsets.mean()
     col_offsets -= col_offsets.mean()
 
-    # Create junction nodes with larger jitter
+    # Create junction nodes with larger jitter, skipping nodes in the river
     node_coords = {}
+    excluded_nodes = set()
     for row in range(grid_side):
         for col in range(grid_side):
             node_id = f"J-{row:03d}-{col:03d}"
@@ -65,6 +126,11 @@ def create_grid_network(
             # Larger random jitter for organic look (±35% of base spacing)
             lat += rng.uniform(-0.0007, 0.0007)
             lon += rng.uniform(-0.0007, 0.0007)
+
+            # Skip nodes that fall within the river exclusion zone
+            if river_zone.contains(Point(lon, lat)):
+                excluded_nodes.add(node_id)
+                continue
 
             # Elevation varies smoothly
             base_elev = 15.0
@@ -84,11 +150,27 @@ def create_grid_network(
     wn.add_tank("T-001", elevation=30.0, init_level=5.0, max_level=10.0, diameter=15.0)
     node_coords["T-001"] = (tank_lon, tank_lat)
 
-    # Connect reservoir and tank
-    corner_00 = "J-000-000"
-    corner_nn = f"J-{grid_side - 1:03d}-{grid_side - 1:03d}"
-    wn.add_pipe("P-RES-IN", "R-001", corner_00, length=300, diameter=0.6, roughness=100)
-    wn.add_pipe("P-TANK-IN", corner_nn, "T-001", length=300, diameter=0.5, roughness=100)
+    # Connect reservoir and tank to the nearest non-excluded corner node
+    def _find_nearest_node(target_row, target_col, grid_side, excluded):
+        """Find nearest non-excluded node to a target grid position."""
+        for radius in range(grid_side):
+            for dr in range(-radius, radius + 1):
+                for dc in range(-radius, radius + 1):
+                    if abs(dr) != radius and abs(dc) != radius:
+                        continue
+                    r, c = target_row + dr, target_col + dc
+                    if 0 <= r < grid_side and 0 <= c < grid_side:
+                        nid = f"J-{r:03d}-{c:03d}"
+                        if nid not in excluded:
+                            return nid
+        return None
+
+    corner_00 = _find_nearest_node(0, 0, grid_side, excluded_nodes)
+    corner_nn = _find_nearest_node(grid_side - 1, grid_side - 1, grid_side, excluded_nodes)
+    if corner_00:
+        wn.add_pipe("P-RES-IN", "R-001", corner_00, length=300, diameter=0.6, roughness=100)
+    if corner_nn:
+        wn.add_pipe("P-TANK-IN", corner_nn, "T-001", length=300, diameter=0.5, roughness=100)
 
     # Collect all potential pipe edges, then selectively remove some
     pipe_edges = []
@@ -96,18 +178,29 @@ def create_grid_network(
     for row in range(grid_side):
         for col in range(grid_side):
             current = f"J-{row:03d}-{col:03d}"
+            if current in excluded_nodes:
+                continue
 
             # Horizontal pipe (to the right)
             if col < grid_side - 1:
                 neighbor = f"J-{row:03d}-{col + 1:03d}"
-                is_artery = (row % 5 == 0 or col % 5 == 0)
-                pipe_edges.append((current, neighbor, is_artery, "horizontal"))
+                if neighbor not in excluded_nodes:
+                    is_artery = (row % 5 == 0 or col % 5 == 0)
+                    # Also check that the pipe doesn't cross the river
+                    c1 = node_coords[current]
+                    c2 = node_coords[neighbor]
+                    if not _pipe_crosses_river(c1[0], c1[1], c2[0], c2[1], river_zone):
+                        pipe_edges.append((current, neighbor, is_artery, "horizontal"))
 
             # Vertical pipe (downward)
             if row < grid_side - 1:
                 neighbor = f"J-{row + 1:03d}-{col:03d}"
-                is_artery = (row % 5 == 0 or col % 5 == 0)
-                pipe_edges.append((current, neighbor, is_artery, "vertical"))
+                if neighbor not in excluded_nodes:
+                    is_artery = (row % 5 == 0 or col % 5 == 0)
+                    c1 = node_coords[current]
+                    c2 = node_coords[neighbor]
+                    if not _pipe_crosses_river(c1[0], c1[1], c2[0], c2[1], river_zone):
+                        pipe_edges.append((current, neighbor, is_artery, "vertical"))
 
     # Add diagonal connections (~5% of grid cells)
     for row in range(grid_side - 1):
@@ -115,7 +208,11 @@ def create_grid_network(
             if rng.random() < 0.05:
                 current = f"J-{row:03d}-{col:03d}"
                 diag = f"J-{row + 1:03d}-{col + 1:03d}"
-                pipe_edges.append((current, diag, False, "diagonal"))
+                if current not in excluded_nodes and diag not in excluded_nodes:
+                    c1 = node_coords[current]
+                    c2 = node_coords[diag]
+                    if not _pipe_crosses_river(c1[0], c1[1], c2[0], c2[1], river_zone):
+                        pipe_edges.append((current, diag, False, "diagonal"))
 
     # Remove random non-artery edges to create irregular topology
     # Never remove arteries (every 5th row/col) to keep the network connected
@@ -136,10 +233,12 @@ def create_grid_network(
         adjacency.setdefault(start, set()).add(end)
         adjacency.setdefault(end, set()).add(start)
     # Add reservoir/tank connections
-    adjacency.setdefault("R-001", set()).add(corner_00)
-    adjacency.setdefault(corner_00, set()).add("R-001")
-    adjacency.setdefault(corner_nn, set()).add("T-001")
-    adjacency.setdefault("T-001", set()).add(corner_nn)
+    if corner_00:
+        adjacency.setdefault("R-001", set()).add(corner_00)
+        adjacency.setdefault(corner_00, set()).add("R-001")
+    if corner_nn:
+        adjacency.setdefault(corner_nn, set()).add("T-001")
+        adjacency.setdefault("T-001", set()).add(corner_nn)
 
     # BFS from reservoir
     visited = set()
@@ -159,6 +258,8 @@ def create_grid_network(
     for node in disconnected:
         if not node.startswith("J-"):
             continue
+        if node in excluded_nodes:
+            continue
         # Parse row/col
         parts = node.split("-")
         row, col = int(parts[1]), int(parts[2])
@@ -167,7 +268,11 @@ def create_grid_network(
             nr, nc = row + dr, col + dc
             if 0 <= nr < grid_side and 0 <= nc < grid_side:
                 neighbor = f"J-{nr:03d}-{nc:03d}"
-                if neighbor in visited:
+                if neighbor in visited and neighbor not in excluded_nodes:
+                    c1 = node_coords[node]
+                    c2 = node_coords[neighbor]
+                    if _pipe_crosses_river(c1[0], c1[1], c2[0], c2[1], river_zone):
+                        continue
                     is_artery = (row % 5 == 0 or col % 5 == 0)
                     filtered_edges.append((node, neighbor, is_artery, "reconnect"))
                     adjacency.setdefault(node, set()).add(neighbor)
