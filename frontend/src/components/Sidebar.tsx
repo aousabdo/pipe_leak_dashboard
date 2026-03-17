@@ -17,10 +17,14 @@ interface Props {
 }
 
 const MODEL_OPTIONS = [
-  { value: "xgboost", label: "XGBoost" },
-  { value: "random_forest", label: "Random Forest" },
-  { value: "logistic_regression", label: "Logistic Regression" },
-  { value: "gradient_boosting", label: "Gradient Boosting" },
+  { value: "xgboost", label: "XGBoost", group: "Individual" },
+  { value: "lightgbm", label: "LightGBM", group: "Individual" },
+  { value: "random_forest", label: "Random Forest", group: "Individual" },
+  { value: "gradient_boosting", label: "Gradient Boosting", group: "Individual" },
+  { value: "logistic_regression", label: "Logistic Regression", group: "Individual" },
+  { value: "stacking_ensemble", label: "Stacking Ensemble", group: "Ensemble" },
+  { value: "voting_ensemble", label: "Voting Ensemble", group: "Ensemble" },
+  { value: "blended_boosting", label: "Blended Boosting", group: "Ensemble" },
 ];
 
 export default function Sidebar({
@@ -122,12 +126,22 @@ export default function Sidebar({
               onChange={(e) => onModelTypeChange(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-400"
             >
-              {MODEL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
+              <optgroup label="Individual Models">
+                {MODEL_OPTIONS.filter((o) => o.group === "Individual").map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Ensemble Models">
+                {MODEL_OPTIONS.filter((o) => o.group === "Ensemble").map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </optgroup>
             </select>
+            {modelType.includes("ensemble") || modelType === "blended_boosting" ? (
+              <p className="text-[10px] text-purple-500 mt-1">
+                Ensembles combine multiple models for higher accuracy. Training takes longer.
+              </p>
+            ) : null}
           </div>
         </Section>
 
