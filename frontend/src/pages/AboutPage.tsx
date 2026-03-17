@@ -1,4 +1,4 @@
-import { Droplets, GitBranch, Database, Brain, Map, BarChart3 } from "lucide-react";
+import { Droplets, GitBranch, Database, Brain, Map, BarChart3, Download, Layers } from "lucide-react";
 
 export default function AboutPage() {
   return (
@@ -11,14 +11,14 @@ export default function AboutPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold">Water Network Leak Predictor</h1>
-            <p className="text-blue-100 text-sm mt-1">v3.0 &mdash; Simulation + Machine Learning Dashboard</p>
+            <p className="text-blue-100 text-sm mt-1">v4.0 &mdash; Simulation + Machine Learning + Interactive Map</p>
           </div>
         </div>
         <p className="text-blue-50 leading-relaxed max-w-2xl">
-          An interactive dashboard for simulating realistic water distribution networks,
-          generating leak events based on Weibull deterioration models, and predicting
-          future pipe failures using machine learning. Designed for water utility engineers,
-          asset managers, and researchers.
+          An interactive dashboard for simulating realistic water distribution networks over
+          Sacramento, CA, generating leak events based on Weibull deterioration models, and
+          predicting future pipe failures using individual and ensemble ML models. Features
+          interactive deck.gl maps, comprehensive analysis, and full data export.
         </p>
       </div>
 
@@ -30,19 +30,19 @@ export default function AboutPage() {
             step={1}
             icon={<Database className="w-5 h-5" />}
             title="Simulate Network"
-            description="Generate a realistic pipe network placed over Sacramento, CA using WNTR hydraulic simulation. Pipes have spatially correlated materials, ages, soil types, and hydraulic properties."
+            description="Generate a realistic pipe network over Sacramento, CA using WNTR hydraulic simulation. Pipes have spatially correlated materials, ages, soil types, and hydraulic properties. The Sacramento River is modeled as an exclusion zone."
           />
           <StepCard
             step={2}
             icon={<BarChart3 className="w-5 h-5" />}
             title="Generate Events"
-            description="Leak events are simulated using Weibull failure models with covariate modifiers (soil corrosivity, pressure, repairs, pipe diameter). Seasonal patterns modulate failure rates."
+            description="Leak events are simulated using Weibull failure models with covariate modifiers (soil corrosivity, pressure, repairs, pipe diameter). Seasonal patterns modulate failure rates with winter freeze-thaw peaks."
           />
           <StepCard
             step={3}
             icon={<Brain className="w-5 h-5" />}
             title="Predict & Analyze"
-            description="Train ML models (XGBoost, Random Forest, Logistic Regression, Gradient Boosting) with temporal train/test splits to predict which pipes will leak next."
+            description="Train individual or ensemble ML models with temporal train/test splits. Explore results via interactive maps, detailed analysis charts, and export data as CSV or full HTML reports."
           />
         </div>
       </div>
@@ -51,11 +51,12 @@ export default function AboutPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <DetailCard title="Simulation Engine">
           <ul className="space-y-2 text-sm text-slate-600">
-            <li><strong>WNTR</strong> &mdash; Water Network Tool for Resilience (EPANET-based hydraulic simulation)</li>
+            <li><strong>WNTR</strong> &mdash; Water Network Tool for Resilience (EPANET-based hydraulic simulation with pressure-driven analysis)</li>
             <li><strong>Weibull Deterioration</strong> &mdash; Material-specific shape (beta) and scale (eta) parameters from water main break rate literature</li>
             <li><strong>Spatial Correlation</strong> &mdash; 5 latitudinal zones with consistent installation eras, materials, and soil types</li>
+            <li><strong>Sacramento River</strong> &mdash; Realistic exclusion zone creating natural network partitioning with automatic connectivity repair</li>
             <li><strong>Seasonal Modulation</strong> &mdash; Winter freeze-thaw cycles increase failure rates by up to 40%</li>
-            <li><strong>Realistic Topology</strong> &mdash; Irregular grid with removed edges, diagonal connections, and variable block sizes</li>
+            <li><strong>Realistic Topology</strong> &mdash; Irregular grid with removed edges, diagonal connections, arterial mains, and variable block sizes</li>
           </ul>
         </DetailCard>
 
@@ -63,26 +64,34 @@ export default function AboutPage() {
           <ul className="space-y-2 text-sm text-slate-600">
             <li><strong>Temporal Splitting</strong> &mdash; Train on historical data, test on future window (no data leakage)</li>
             <li><strong>Feature Engineering</strong> &mdash; Static pipe attributes + historical leak counts, days since last leak, recent leak frequency</li>
-            <li><strong>Class Imbalance</strong> &mdash; Handled via scale_pos_weight (XGBoost) or class_weight='balanced' (RF, LR)</li>
+            <li><strong>Class Imbalance</strong> &mdash; Handled via scale_pos_weight (XGBoost/LightGBM) or class_weight='balanced' (RF, LR)</li>
             <li><strong>Optimal Threshold</strong> &mdash; F1-maximizing threshold found automatically (not fixed at 0.5)</li>
+            <li><strong>Calibration</strong> &mdash; Reliability diagrams show predicted vs actual positive rates</li>
             <li><strong>Honest Metrics</strong> &mdash; All metrics reported as-is, including PR AUC (better for imbalanced data)</li>
           </ul>
         </DetailCard>
 
         <DetailCard title="Available Models">
           <ul className="space-y-2 text-sm text-slate-600">
-            <li><strong>XGBoost</strong> &mdash; Gradient boosted trees, best for tabular data. 200 trees, depth 5, with scale_pos_weight</li>
-            <li><strong>Random Forest</strong> &mdash; Ensemble of 300 decision trees with balanced class weights</li>
-            <li><strong>Logistic Regression</strong> &mdash; Linear model with balanced class weights. Fast, interpretable baseline</li>
-            <li><strong>Gradient Boosting</strong> &mdash; Sklearn implementation with sample weighting for imbalance</li>
+            <li className="font-semibold text-slate-500 text-xs uppercase tracking-wider pt-1">Individual</li>
+            <li><strong>XGBoost</strong> &mdash; Gradient boosted trees, 200 trees, depth 5, with scale_pos_weight</li>
+            <li><strong>LightGBM</strong> &mdash; Fast gradient boosting with is_unbalance flag</li>
+            <li><strong>Random Forest</strong> &mdash; 300 decision trees with balanced class weights</li>
+            <li><strong>Gradient Boosting</strong> &mdash; Sklearn implementation with sample weighting</li>
+            <li><strong>Logistic Regression</strong> &mdash; Linear model, fast and interpretable baseline</li>
+            <li className="font-semibold text-slate-500 text-xs uppercase tracking-wider pt-2">Ensemble</li>
+            <li><strong>Stacking</strong> &mdash; XGB + LGBM + RF + ExtraTrees with Logistic Regression meta-learner</li>
+            <li><strong>Voting</strong> &mdash; Soft voting across XGB + LGBM + RF + GB + MLP</li>
+            <li><strong>Blended Boosting</strong> &mdash; Averaged predictions from 2x XGBoost + 2x LightGBM</li>
           </ul>
         </DetailCard>
 
         <DetailCard title="Technology Stack">
           <ul className="space-y-2 text-sm text-slate-600">
-            <li><strong>Backend</strong> &mdash; FastAPI + Python, WNTR, scikit-learn, XGBoost, GeoPandas</li>
-            <li><strong>Frontend</strong> &mdash; React 19, TypeScript, TailwindCSS, Recharts, deck.gl, MapLibre</li>
-            <li><strong>Visualization</strong> &mdash; Interactive maps with deck.gl LineLayer/ScatterplotLayer, Recharts for analytics</li>
+            <li><strong>Backend</strong> &mdash; FastAPI + Python, WNTR, scikit-learn, XGBoost, LightGBM, GeoPandas</li>
+            <li><strong>Frontend</strong> &mdash; React 19, TypeScript, TailwindCSS, Recharts, deck.gl, MapLibre GL</li>
+            <li><strong>Maps</strong> &mdash; Interactive deck.gl LineLayer &amp; ScatterplotLayer with risk-based coloring and hotspot views</li>
+            <li><strong>Export</strong> &mdash; CSV downloads for pipes and events, full HTML analysis reports with embedded charts</li>
           </ul>
         </DetailCard>
       </div>
@@ -94,6 +103,7 @@ export default function AboutPage() {
           <li>Kleiner, Y. & Rajani, B. (2001). Comprehensive review of structural deterioration of water mains. <em>Urban Water</em>, 3(3), 151-164.</li>
           <li>WNTR: Water Network Tool for Resilience (Sandia National Laboratories)</li>
           <li>Chen, T. & Guestrin, C. (2016). XGBoost: A Scalable Tree Boosting System. <em>KDD 2016</em>.</li>
+          <li>Ke, G. et al. (2017). LightGBM: A Highly Efficient Gradient Boosting Decision Tree. <em>NeurIPS 2017</em>.</li>
         </ul>
       </div>
     </div>
