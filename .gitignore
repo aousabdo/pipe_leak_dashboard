@@ -45,3 +45,8 @@ frontend/dist/
 
 # Notebooks checkpoints
 .ipynb_checkpoints/
+
+# WNTR simulation temp files
+temp.bin
+temp.inp
+temp.rpt
